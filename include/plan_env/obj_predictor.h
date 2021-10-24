@@ -51,6 +51,7 @@ class PolynomialPrediction {
 private:
   vector<Eigen::Matrix<double, 6, 1>> polys;
   double t1, t2;  // start / end
+  ros::Time global_start_time_;
 
 public:
   PolynomialPrediction(/* args */) {
@@ -64,6 +65,9 @@ public:
   void setTime(double t1, double t2) {
     this->t1 = t1;
     this->t2 = t2;
+  }
+  void setGlobalStartTime(ros::Time global_start_time) {
+    global_start_time_ = global_start_time;
   }
 
   bool valid() {
@@ -83,7 +87,9 @@ public:
 
   Eigen::Vector3d evaluateConstVel(double t) {
     Eigen::Matrix<double, 2, 1> tv;
-    tv << 1.0, pow(t, 1);
+    tv << 1.0, pow(t-global_start_time_.toSec(), 1);
+
+    // cout << t-global_start_time_.toSec() << endl;
 
     Eigen::Vector3d pt;
     pt(0) = tv.dot(polys[0].head(2)), pt(1) = tv.dot(polys[1].head(2)), pt(2) = tv.dot(polys[2].head(2));
@@ -95,16 +101,16 @@ public:
 /* ========== subscribe and record object history ========== */
 class ObjHistory {
 public:
-  static int skip_num_;
-  static int queue_size_;
-  static ros::Time global_start_time_;
+  int skip_num_;
+  int queue_size_;
+  ros::Time global_start_time_;
 
   ObjHistory() {
   }
   ~ObjHistory() {
   }
 
-  void init(int id);
+  void init(int id, int skip_num, int queue_size, ros::Time global_start_time);
 
   void poseCallback(const geometry_msgs::PoseStampedConstPtr& msg);
 
@@ -157,6 +163,10 @@ public:
 
   ObjPrediction getPredictionTraj();
   ObjScale getObjScale();
+  int getObjNums() {return obj_num_;}
+
+  Eigen::Vector3d evaluatePoly(int obs_id, double time);
+  Eigen::Vector3d evaluateConstVel(int obs_id, double time);
 
   typedef shared_ptr<ObjPredictor> Ptr;
 };

@@ -105,14 +105,13 @@ void GridMap::initMap(ros::NodeHandle &nh)
 
   /* init callback */
 
-  depth_sub_.reset(new message_filters::Subscriber<sensor_msgs::Image>(node_, "grid_map/depth", 50));
-  extrinsic_sub_ = node_.subscribe<nav_msgs::Odometry>(
-      "/vins_estimator/extrinsic", 10, &GridMap::extrinsicCallback, this); //sub
+  depth_sub_.reset(new message_filters::Subscriber<sensor_msgs::Image>(node_, "grid_map_depth", 50));
+  extrinsic_sub_ = node_.subscribe<nav_msgs::Odometry>("vins_estimator/extrinsic", 10, &GridMap::extrinsicCallback, this); //sub
 
   if (mp_.pose_type_ == POSE_STAMPED)
   {
     pose_sub_.reset(
-        new message_filters::Subscriber<geometry_msgs::PoseStamped>(node_, "grid_map/pose", 25));
+        new message_filters::Subscriber<geometry_msgs::PoseStamped>(node_, "grid_map_pose", 25));
 
     sync_image_pose_.reset(new message_filters::Synchronizer<SyncPolicyImagePose>(
         SyncPolicyImagePose(100), *depth_sub_, *pose_sub_));
@@ -120,7 +119,7 @@ void GridMap::initMap(ros::NodeHandle &nh)
   }
   else if (mp_.pose_type_ == ODOMETRY)
   {
-    odom_sub_.reset(new message_filters::Subscriber<nav_msgs::Odometry>(node_, "grid_map/odom", 100, ros::TransportHints().tcpNoDelay()));
+    odom_sub_.reset(new message_filters::Subscriber<nav_msgs::Odometry>(node_, "grid_map_odom", 100, ros::TransportHints().tcpNoDelay()));
 
     sync_image_odom_.reset(new message_filters::Synchronizer<SyncPolicyImageOdom>(
         SyncPolicyImageOdom(100), *depth_sub_, *odom_sub_));
@@ -129,9 +128,13 @@ void GridMap::initMap(ros::NodeHandle &nh)
 
   // use odometry and point cloud
   indep_cloud_sub_ =
-      node_.subscribe<sensor_msgs::PointCloud2>("grid_map/cloud", 10, &GridMap::cloudCallback, this);
+      node_.subscribe<sensor_msgs::PointCloud2>("grid_map_cloud", 10, &GridMap::cloudCallback, this);
   indep_odom_sub_ =
-      node_.subscribe<nav_msgs::Odometry>("grid_map/odom", 10, &GridMap::odomCallback, this);
+      node_.subscribe<nav_msgs::Odometry>("grid_map_odom", 10, &GridMap::odomCallback, this);
+  //@yuwei add cylinders
+  indep_cylinders_sub_ = 
+      node_.subscribe<sensor_msgs::PointCloud2>("grid_map_cylinders", 10, &GridMap::cylindersCallback, this);
+
 
   occ_timer_ = node_.createTimer(ros::Duration(0.05), &GridMap::updateOccupancyCallback, this);
   vis_timer_ = node_.createTimer(ros::Duration(0.11), &GridMap::visCallback, this);
@@ -158,6 +161,20 @@ void GridMap::initMap(ros::NodeHandle &nh)
   // rand_noise2_ = normal_distribution<double>(0, 0.2);
   // random_device rd;
   // eng_ = default_random_engine(rd());
+
+
+  /* @yuwei
+   * Init cylinders map and dynamic map
+   *   
+   * 
+   * 
+   */
+ 
+  sta_map_ptr_->initMap(Vec2i(mp_.map_voxel_num_(0), mp_.map_voxel_num_(1)), 
+                        Vec2f((float)mp_.map_origin_(0), (float)mp_.map_origin_(1)),
+                        mp_.resolution_, mp_.obstacles_inflation_);
+
+
 }
 
 void GridMap::resetBuffer()
@@ -189,6 +206,43 @@ void GridMap::resetBuffer(Eigen::Vector3d min_pos, Eigen::Vector3d max_pos)
         md_.occupancy_buffer_inflate_[toAddress(x, y, z)] = 0;
       }
 }
+
+void GridMap::getlineGrids(const Eigen::Vector3d &s_p, const Eigen::Vector3d &e_p, vector<Eigen::Vector3d> &grids)
+{
+  RayCaster raycaster;
+  Eigen::Vector3d ray_pt;
+  Eigen::Vector3d start = s_p / mp_.resolution_, end = e_p / mp_.resolution_;
+  bool need_ray = raycaster.setInput(start, end);
+  if (need_ray)
+  {
+    while (raycaster.step(ray_pt))
+    {
+      Eigen::Vector3d tmp = (ray_pt)*mp_.resolution_;
+      tmp[0] += mp_.resolution_ / 2.0;
+      tmp[1] += mp_.resolution_ / 2.0;
+      tmp[2] += mp_.resolution_ / 2.0;
+      grids.push_back(tmp);
+    }
+  }
+
+  //check end
+  Eigen::Vector3d end_idx;
+  end_idx[0] = std::floor(end.x());
+  end_idx[1] = std::floor(end.y());
+  end_idx[2] = std::floor(end.z());
+
+  ray_pt[0] = (double)end_idx[0];
+  ray_pt[1] = (double)end_idx[1];
+  ray_pt[2] = (double)end_idx[2];
+  Eigen::Vector3d tmp = (ray_pt)*mp_.resolution_;
+  tmp[0] += mp_.resolution_ / 2.0;
+  tmp[1] += mp_.resolution_ / 2.0;
+  tmp[2] += mp_.resolution_ / 2.0;
+  grids.push_back(tmp);
+}
+
+
+
 
 int GridMap::setCacheOccupancy(Eigen::Vector3d pos, int occ)
 {
@@ -606,6 +660,7 @@ void GridMap::clearAndInflateLocalMap()
   // inflate occupied voxels to compensate robot size
 
   int inf_step = ceil(mp_.obstacles_inflation_ / mp_.resolution_);
+  std::cout << "[debug!!!!!!!!!!!!!] inf_step " << std::endl;
   // int inf_step_z = 1;
   vector<Eigen::Vector3i> inf_pts(pow(2 * inf_step + 1, 3));
   // inf_pts.resize(4 * inf_step + 3);
@@ -655,7 +710,6 @@ void GridMap::clearAndInflateLocalMap()
 
 void GridMap::visCallback(const ros::TimerEvent & /*event*/)
 {
-
   publishMapInflate(true);
   publishMap();
 }
@@ -860,6 +914,32 @@ void GridMap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &img)
   }
 }
 
+
+
+void GridMap::cylindersCallback(const sensor_msgs::PointCloud2ConstPtr& msg_ptr){
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cylinders_update(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::fromROSMsg(*msg_ptr,  *cylinders_update);
+  sta_map_ptr_->updateCylinders(cylinders_update);
+
+  return;
+}
+
+
+void GridMap::getMapUtil(std::shared_ptr<JPS::OccMapUtil>& sta_ptr_, 
+                         std::shared_ptr<JPS::VoxelMapUtil>& dyn_ptr_ ){
+  
+  sta_ptr_ = sta_map_ptr_;
+  dyn_ptr_ = dyn_map_ptr_;
+  
+}
+
+
+
+
+
+
+
 void GridMap::publishMap()
 {
 
@@ -888,6 +968,7 @@ void GridMap::publishMap()
 
         Eigen::Vector3d pos;
         indexToPos(Eigen::Vector3i(x, y, z), pos);
+
         if (pos(2) > mp_.visualization_truncate_height_)
           continue;
 

@@ -24,6 +24,10 @@
 
 #include <plan_env/raycast.h>
 
+#include <jps_basis/data_utils.h>
+#include <jps_collision/map_util.h>
+
+
 #define logit(x) (log((x) / (1 - (x))))
 
 using namespace std;
@@ -146,6 +150,12 @@ public:
 
   enum { POSE_STAMPED = 1, ODOMETRY = 2, INVALID_IDX = -10000 };
 
+  // global cylinder voxel map
+  std::shared_ptr<JPS::VoxelMapUtil> dyn_map_ptr_ = std::make_shared<JPS::VoxelMapUtil>();
+  std::shared_ptr<JPS::OccMapUtil> sta_map_ptr_ = std::make_shared<JPS::OccMapUtil>();
+  void getMapUtil(std::shared_ptr<JPS::OccMapUtil>& sta_ptr_, 
+                  std::shared_ptr<JPS::VoxelMapUtil>& dyn_ptr_);
+
   // occupancy map management
   void resetBuffer();
   void resetBuffer(Eigen::Vector3d min, Eigen::Vector3d max);
@@ -187,6 +197,9 @@ public:
   typedef std::shared_ptr<GridMap> Ptr;
 
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  void getlineGrids(const Eigen::Vector3d &s_p, const Eigen::Vector3d &e_p, vector<Eigen::Vector3d> &grids);
+
+
 
 private:
   MappingParameters mp_;
@@ -198,6 +211,8 @@ private:
   void extrinsicCallback(const nav_msgs::OdometryConstPtr& odom);
   void depthOdomCallback(const sensor_msgs::ImageConstPtr& img, const nav_msgs::OdometryConstPtr& odom);
   void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& img);
+  //@yuwei
+  void cylindersCallback(const sensor_msgs::PointCloud2ConstPtr& msg);
   void odomCallback(const nav_msgs::OdometryConstPtr& odom);
 
   // update occupancy by raycasting
@@ -231,7 +246,7 @@ private:
   SynchronizerImagePose sync_image_pose_;
   SynchronizerImageOdom sync_image_odom_;
 
-  ros::Subscriber indep_cloud_sub_, indep_odom_sub_, extrinsic_sub_;
+  ros::Subscriber indep_cloud_sub_, indep_odom_sub_, indep_cylinders_sub_, extrinsic_sub_;
   ros::Publisher map_pub_, map_inf_pub_;
   ros::Timer occ_timer_, vis_timer_;
 

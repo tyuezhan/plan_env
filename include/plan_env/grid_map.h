@@ -155,6 +155,12 @@ public:
   std::shared_ptr<JPS::OccMapUtil> sta_map_ptr_ = std::make_shared<JPS::OccMapUtil>();
   void getMapUtil(std::shared_ptr<JPS::OccMapUtil>& sta_ptr_, 
                   std::shared_ptr<JPS::VoxelMapUtil>& dyn_ptr_);
+  void getlineGrids(const Eigen::Vector3d &s_p, const Eigen::Vector3d &e_p, vector<Eigen::Vector3d> &grids);
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr latest_cloud_;
+  void getPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud_ptr);
+  
+
 
   // occupancy map management
   void resetBuffer();
@@ -197,9 +203,6 @@ public:
   typedef std::shared_ptr<GridMap> Ptr;
 
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  void getlineGrids(const Eigen::Vector3d &s_p, const Eigen::Vector3d &e_p, vector<Eigen::Vector3d> &grids);
-
-
 
 private:
   MappingParameters mp_;

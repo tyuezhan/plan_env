@@ -207,6 +207,7 @@ void GridMap::resetBuffer(Eigen::Vector3d min_pos, Eigen::Vector3d max_pos)
       }
 }
 
+//grid from start to end
 void GridMap::getlineGrids(const Eigen::Vector3d &s_p, const Eigen::Vector3d &e_p, vector<Eigen::Vector3d> &grids)
 {
   RayCaster raycaster;
@@ -809,8 +810,9 @@ void GridMap::odomCallback(const nav_msgs::OdometryConstPtr &odom)
 void GridMap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &img)
 {
 
-  pcl::PointCloud<pcl::PointXYZ> latest_cloud;
-  pcl::fromROSMsg(*img, latest_cloud);
+  
+  
+  pcl::fromROSMsg(*img, *latest_cloud_);
 
   md_.has_cloud_ = true;
 
@@ -820,7 +822,7 @@ void GridMap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &img)
     return;
   }
 
-  if (latest_cloud.points.size() == 0)
+  if (latest_cloud_->points.size() == 0)
     return;
 
   if (isnan(md_.camera_pos_(0)) || isnan(md_.camera_pos_(1)) || isnan(md_.camera_pos_(2)))
@@ -845,9 +847,9 @@ void GridMap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &img)
   max_y = mp_.map_min_boundary_(1);
   max_z = mp_.map_min_boundary_(2);
 
-  for (size_t i = 0; i < latest_cloud.points.size(); ++i)
+  for (size_t i = 0; i < latest_cloud_->points.size(); ++i)
   {
-    pt = latest_cloud.points[i];
+    pt = latest_cloud_->points[i];
     p3d(0) = pt.x, p3d(1) = pt.y, p3d(2) = pt.z;
 
     /* point inside update range */
@@ -934,6 +936,12 @@ void GridMap::getMapUtil(std::shared_ptr<JPS::OccMapUtil>& sta_ptr_,
   
 }
 
+void GridMap::getPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud_ptr){
+  
+
+  
+  
+}
 
 
 

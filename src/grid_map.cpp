@@ -53,6 +53,10 @@ void GridMap::initMap(ros::NodeHandle &nh)
 
   node_.param("grid_map/odom_depth_timeout", mp_.odom_depth_timeout_, 1.0);
 
+  node_.param("ego_radius", ego_r_, 1.0);
+  node_.param("ego_height", ego_h_, 1.0);
+
+
   if( mp_.virtual_ceil_height_ - mp_.ground_height_ > z_size)
   {
     mp_.virtual_ceil_height_ = mp_.ground_height_ + z_size;
@@ -99,9 +103,9 @@ void GridMap::initMap(ros::NodeHandle &nh)
   md_.proj_points_cnt = 0;
 
   md_.cam2body_ << 0.0, 0.0, 1.0, 0.0,
-      -1.0, 0.0, 0.0, 0.0,
-      0.0, -1.0, 0.0, 0.0,
-      0.0, 0.0, 0.0, 1.0;
+                  -1.0, 0.0, 0.0, 0.0,
+                  0.0, -1.0, 0.0, 0.0,
+                  0.0, 0.0, 0.0, 1.0;
 
   /* init callback */
 
@@ -142,6 +146,10 @@ void GridMap::initMap(ros::NodeHandle &nh)
   map_pub_ = node_.advertise<sensor_msgs::PointCloud2>("grid_map/occupancy", 10);
   map_inf_pub_ = node_.advertise<sensor_msgs::PointCloud2>("grid_map/occupancy_inflate", 10);
 
+  global_map_pub_ = node_.advertise<sensor_msgs::PointCloud2>("grid_map/global_map", 10);
+
+
+
   md_.occ_need_update_ = false;
   md_.local_updated_ = false;
   md_.has_first_depth_ = false;
@@ -173,8 +181,8 @@ void GridMap::initMap(ros::NodeHandle &nh)
   sta_map_ptr_->initMap(Vec2i(mp_.map_voxel_num_(0), mp_.map_voxel_num_(1)), 
                         Vec2f((float)mp_.map_origin_(0), (float)mp_.map_origin_(1)),
                         mp_.resolution_, mp_.obstacles_inflation_);
-
-
+  sta_map_ptr_->info();
+  pcl::PointCloud<pcl::PointXYZ>::Ptr latest_cloud_(new pcl::PointCloud<pcl::PointXYZ>);
 }
 
 void GridMap::resetBuffer()
@@ -206,43 +214,6 @@ void GridMap::resetBuffer(Eigen::Vector3d min_pos, Eigen::Vector3d max_pos)
         md_.occupancy_buffer_inflate_[toAddress(x, y, z)] = 0;
       }
 }
-
-//grid from start to end
-void GridMap::getlineGrids(const Eigen::Vector3d &s_p, const Eigen::Vector3d &e_p, vector<Eigen::Vector3d> &grids)
-{
-  RayCaster raycaster;
-  Eigen::Vector3d ray_pt;
-  Eigen::Vector3d start = s_p / mp_.resolution_, end = e_p / mp_.resolution_;
-  bool need_ray = raycaster.setInput(start, end);
-  if (need_ray)
-  {
-    while (raycaster.step(ray_pt))
-    {
-      Eigen::Vector3d tmp = (ray_pt)*mp_.resolution_;
-      tmp[0] += mp_.resolution_ / 2.0;
-      tmp[1] += mp_.resolution_ / 2.0;
-      tmp[2] += mp_.resolution_ / 2.0;
-      grids.push_back(tmp);
-    }
-  }
-
-  //check end
-  Eigen::Vector3d end_idx;
-  end_idx[0] = std::floor(end.x());
-  end_idx[1] = std::floor(end.y());
-  end_idx[2] = std::floor(end.z());
-
-  ray_pt[0] = (double)end_idx[0];
-  ray_pt[1] = (double)end_idx[1];
-  ray_pt[2] = (double)end_idx[2];
-  Eigen::Vector3d tmp = (ray_pt)*mp_.resolution_;
-  tmp[0] += mp_.resolution_ / 2.0;
-  tmp[1] += mp_.resolution_ / 2.0;
-  tmp[2] += mp_.resolution_ / 2.0;
-  grids.push_back(tmp);
-}
-
-
 
 
 int GridMap::setCacheOccupancy(Eigen::Vector3d pos, int occ)
@@ -809,10 +780,10 @@ void GridMap::odomCallback(const nav_msgs::OdometryConstPtr &odom)
 
 void GridMap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &img)
 {
-
-  
-  
-  pcl::fromROSMsg(*img, *latest_cloud_);
+  if (img == nullptr )   return;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_raw(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::fromROSMsg(*img, *cloud_raw);
+  latest_cloud_ = cloud_raw;
 
   md_.has_cloud_ = true;
 
@@ -916,35 +887,119 @@ void GridMap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &img)
   }
 }
 
-
-
 void GridMap::cylindersCallback(const sensor_msgs::PointCloud2ConstPtr& msg_ptr){
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr cylinders_update(new pcl::PointCloud<pcl::PointXYZ>);
   pcl::fromROSMsg(*msg_ptr,  *cylinders_update);
   sta_map_ptr_->updateCylinders(cylinders_update);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr global_map(new pcl::PointCloud<pcl::PointXYZ>);
+  sta_map_ptr_->getpclCloud(global_map);
+  sensor_msgs::PointCloud2 global_map_msg;
+  pcl::toROSMsg(*global_map, global_map_msg);
+  global_map_msg.header.frame_id = mp_.frame_id_;
 
+  global_map_pub_.publish(global_map_msg);
+
+  have_cylinders_ = true;
   return;
 }
 
 
-void GridMap::getMapUtil(std::shared_ptr<JPS::OccMapUtil>& sta_ptr_, 
-                         std::shared_ptr<JPS::VoxelMapUtil>& dyn_ptr_ ){
+void GridMap::getMapUtil(std::shared_ptr<JPS::OccMapUtil>& sta_ptr_){
   
+  //std::cout << "[debug]start to init the map for jps !!!" << std::endl; 
+  if (!have_cylinders_ ) {
+    std::cout << "[GridMap::getMapUtil] No cylinders" << std::endl; 
+    return;
+  }
   sta_ptr_ = sta_map_ptr_;
-  dyn_ptr_ = dyn_map_ptr_;
+  sta_ptr_->info();
+  std::cout << "[GridMap::getMapUtil] Success!" << std::endl; 
   
 }
 
 void GridMap::getPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud_ptr){
-  
 
-  
+  cloud_ptr = latest_cloud_;
   
 }
 
 
+bool GridMap::checkState(const Eigen::Vector3d &pos, const Eigen::Vector3d &vel, double inflate_ratio)
+{
+  vector<Eigen::Vector3d> line_grids;
 
+  Eigen::Vector3d cw_edge_pos, ccw_edge_pos;
+  Eigen::Vector2d vel_hor, cw_radius_vec;
+  cw_edge_pos[2] = pos[2];
+  ccw_edge_pos[2] = pos[2];
+  vel_hor[0] = vel[0];
+  vel_hor[1] = vel[1];
+  double v_hor_norm = vel_hor.norm();
+  if (v_hor_norm < 1e-4)
+  {
+    vel_hor[0] = 1;
+    vel_hor[1] = 1;
+  }
+  Eigen::Matrix2d r_m;
+  r_m << 0, 1,
+        -1, 0;
+  cw_radius_vec = r_m * vel_hor;
+  cw_radius_vec = cw_radius_vec.normalized() * ego_r_ * inflate_ratio;
+  cw_edge_pos.head(2) = pos.head(2) + cw_radius_vec;
+  ccw_edge_pos.head(2) = pos.head(2) - cw_radius_vec;
+  //add horizontal vox;
+  getlineGrids(cw_edge_pos, ccw_edge_pos, line_grids);
+  Eigen::Vector3d vertical_up(pos), vertical_down(pos);
+  vertical_up(2) += ego_h_ * inflate_ratio;
+  vertical_down(2) -= ego_h_ * inflate_ratio;
+  //add veltical vox;
+  getlineGrids(vertical_up, vertical_down, line_grids);
+  for (const auto &grid : line_grids)
+  {
+    if (getOccupancy(grid) != 0)
+    {
+      //cout << "collision: " << grid.transpose() << endl;
+      return false;
+    }
+  }
+  return true;
+}
+
+void GridMap::getlineGrids(const Eigen::Vector3d &s_p, const Eigen::Vector3d &e_p, vector<Eigen::Vector3d> &grids)
+{
+  RayCaster raycaster;
+  Eigen::Vector3d ray_pt;
+  Eigen::Vector3d start = s_p / mp_.resolution_, end = e_p / mp_.resolution_;
+  bool need_ray = raycaster.setInput(start, end);
+  double step = mp_.resolution_ / 2.0;
+  if (need_ray)
+  {
+    while (raycaster.step(ray_pt))
+    {
+      Eigen::Vector3d tmp = (ray_pt)*mp_.resolution_;
+      tmp[0] += step;
+      tmp[1] += step;
+      tmp[2] += step;
+      grids.push_back(tmp);
+    }
+  }
+
+  //check end
+  Eigen::Vector3d end_idx;
+  end_idx[0] = std::floor(end.x());
+  end_idx[1] = std::floor(end.y());
+  end_idx[2] = std::floor(end.z());
+
+  ray_pt[0] = (double)end_idx[0];
+  ray_pt[1] = (double)end_idx[1];
+  ray_pt[2] = (double)end_idx[2];
+  Eigen::Vector3d tmp = (ray_pt)*mp_.resolution_;
+  tmp[0] += step;
+  tmp[1] += step;
+  tmp[2] += step;
+  grids.push_back(tmp);
+}
 
 
 

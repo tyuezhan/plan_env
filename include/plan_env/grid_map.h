@@ -151,16 +151,18 @@ public:
   enum { POSE_STAMPED = 1, ODOMETRY = 2, INVALID_IDX = -10000 };
 
   // global cylinder voxel map
-  std::shared_ptr<JPS::VoxelMapUtil> dyn_map_ptr_ = std::make_shared<JPS::VoxelMapUtil>();
   std::shared_ptr<JPS::OccMapUtil> sta_map_ptr_ = std::make_shared<JPS::OccMapUtil>();
-  void getMapUtil(std::shared_ptr<JPS::OccMapUtil>& sta_ptr_, 
-                  std::shared_ptr<JPS::VoxelMapUtil>& dyn_ptr_);
+  void getMapUtil(std::shared_ptr<JPS::OccMapUtil>& sta_ptr_);
   void getlineGrids(const Eigen::Vector3d &s_p, const Eigen::Vector3d &e_p, vector<Eigen::Vector3d> &grids);
+  Eigen::Vector3d getMapSize() { return mp_.map_size_; }
+
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr latest_cloud_;
   void getPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud_ptr);
-  
+  bool have_cylinders_ = false;
 
+  //check state, not limited to position
+  bool checkState(const Eigen::Vector3d &pos, const Eigen::Vector3d &vel, double inflate_ratio);
 
   // occupancy map management
   void resetBuffer();
@@ -207,6 +209,7 @@ public:
 private:
   MappingParameters mp_;
   MappingData md_;
+  double ego_r_, ego_h_;
 
   // get depth image and camera pose
   void depthPoseCallback(const sensor_msgs::ImageConstPtr& img,
@@ -250,7 +253,7 @@ private:
   SynchronizerImageOdom sync_image_odom_;
 
   ros::Subscriber indep_cloud_sub_, indep_odom_sub_, indep_cylinders_sub_, extrinsic_sub_;
-  ros::Publisher map_pub_, map_inf_pub_;
+  ros::Publisher map_pub_, map_inf_pub_, global_map_pub_;
   ros::Timer occ_timer_, vis_timer_;
 
   //

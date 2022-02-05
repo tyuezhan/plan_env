@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.10)
 project(plan_env)
 
 set(CMAKE_BUILD_TYPE "Release")
@@ -7,8 +7,6 @@ ADD_COMPILE_OPTIONS(-std=c++14 )
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
 
 find_package(OpenCV REQUIRED)
-find_package(jps3d REQUIRED)
-include_directories(${JPS3D_INCLUDE_DIRS})
 
 
 find_package(catkin REQUIRED COMPONENTS

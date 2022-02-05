@@ -110,7 +110,7 @@ void GridMap::initMap(ros::NodeHandle &nh)
   /* init callback */
 
   depth_sub_.reset(new message_filters::Subscriber<sensor_msgs::Image>(node_, "grid_map_depth", 50));
-  extrinsic_sub_ = node_.subscribe<nav_msgs::Odometry>("vins_estimator/extrinsic", 10, &GridMap::extrinsicCallback, this); //sub
+  //extrinsic_sub_ = node_.subscribe<nav_msgs::Odometry>("vins_estimator/extrinsic", 10, &GridMap::extrinsicCallback, this); //sub
 
   if (mp_.pose_type_ == POSE_STAMPED)
   {
@@ -135,9 +135,9 @@ void GridMap::initMap(ros::NodeHandle &nh)
       node_.subscribe<sensor_msgs::PointCloud2>("grid_map_cloud", 10, &GridMap::cloudCallback, this);
   indep_odom_sub_ =
       node_.subscribe<nav_msgs::Odometry>("grid_map_odom", 10, &GridMap::odomCallback, this);
-  //@yuwei add cylinders
-  indep_cylinders_sub_ = 
-      node_.subscribe<sensor_msgs::PointCloud2>("grid_map_cylinders", 10, &GridMap::cylindersCallback, this);
+  // //@yuwei add cylinders
+  // indep_cylinders_sub_ = 
+  //     node_.subscribe<sensor_msgs::PointCloud2>("grid_map_cylinders", 10, &GridMap::cylindersCallback, this);
 
 
   occ_timer_ = node_.createTimer(ros::Duration(0.05), &GridMap::updateOccupancyCallback, this);
@@ -178,11 +178,10 @@ void GridMap::initMap(ros::NodeHandle &nh)
    * 
    */
  
-  sta_map_ptr_->initMap(Vec2i(mp_.map_voxel_num_(0), mp_.map_voxel_num_(1)), 
-                        Vec2f((float)mp_.map_origin_(0), (float)mp_.map_origin_(1)),
-                        mp_.resolution_, mp_.obstacles_inflation_);
-  sta_map_ptr_->info();
-  pcl::PointCloud<pcl::PointXYZ>::Ptr latest_cloud_(new pcl::PointCloud<pcl::PointXYZ>);
+  // sta_map_ptr_->initMap(Vec2i(mp_.map_voxel_num_(0), mp_.map_voxel_num_(1)), 
+  //                       Vec2f((float)mp_.map_origin_(0), (float)mp_.map_origin_(1)),
+  //                       mp_.resolution_, mp_.obstacles_inflation_);
+  // sta_map_ptr_->info();
 }
 
 void GridMap::resetBuffer()
@@ -632,7 +631,6 @@ void GridMap::clearAndInflateLocalMap()
   // inflate occupied voxels to compensate robot size
 
   int inf_step = ceil(mp_.obstacles_inflation_ / mp_.resolution_);
-  std::cout << "[debug!!!!!!!!!!!!!] inf_step " << std::endl;
   // int inf_step_z = 1;
   vector<Eigen::Vector3i> inf_pts(pow(2 * inf_step + 1, 3));
   // inf_pts.resize(4 * inf_step + 3);
@@ -783,7 +781,6 @@ void GridMap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &img)
   if (img == nullptr )   return;
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_raw(new pcl::PointCloud<pcl::PointXYZ>);
   pcl::fromROSMsg(*img, *cloud_raw);
-  latest_cloud_ = cloud_raw;
 
   md_.has_cloud_ = true;
 
@@ -793,7 +790,7 @@ void GridMap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &img)
     return;
   }
 
-  if (latest_cloud_->points.size() == 0)
+  if (cloud_raw->points.size() == 0)
     return;
 
   if (isnan(md_.camera_pos_(0)) || isnan(md_.camera_pos_(1)) || isnan(md_.camera_pos_(2)))
@@ -818,9 +815,9 @@ void GridMap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &img)
   max_y = mp_.map_min_boundary_(1);
   max_z = mp_.map_min_boundary_(2);
 
-  for (size_t i = 0; i < latest_cloud_->points.size(); ++i)
+  for (size_t i = 0; i < cloud_raw->points.size(); ++i)
   {
-    pt = latest_cloud_->points[i];
+    pt = cloud_raw->points[i];
     p3d(0) = pt.x, p3d(1) = pt.y, p3d(2) = pt.z;
 
     /* point inside update range */
@@ -887,36 +884,35 @@ void GridMap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &img)
   }
 }
 
-void GridMap::cylindersCallback(const sensor_msgs::PointCloud2ConstPtr& msg_ptr){
+// void GridMap::cylindersCallback(const sensor_msgs::PointCloud2ConstPtr& msg_ptr){
 
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cylinders_update(new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::fromROSMsg(*msg_ptr,  *cylinders_update);
-  sta_map_ptr_->updateCylinders(cylinders_update);
-  pcl::PointCloud<pcl::PointXYZ>::Ptr global_map(new pcl::PointCloud<pcl::PointXYZ>);
-  sta_map_ptr_->getpclCloud(global_map);
-  sensor_msgs::PointCloud2 global_map_msg;
-  pcl::toROSMsg(*global_map, global_map_msg);
-  global_map_msg.header.frame_id = mp_.frame_id_;
+//   pcl::PointCloud<pcl::PointXYZ>::Ptr cylinders_update(new pcl::PointCloud<pcl::PointXYZ>);
+//   pcl::fromROSMsg(*msg_ptr,  *cylinders_update);
+//   sta_map_ptr_->updateCylinders(cylinders_update);
+//   pcl::PointCloud<pcl::PointXYZ>::Ptr global_map(new pcl::PointCloud<pcl::PointXYZ>);
+//   sta_map_ptr_->getpclCloud(global_map);
+//   sensor_msgs::PointCloud2 global_map_msg;
+//   pcl::toROSMsg(*global_map, global_map_msg);
+//   global_map_msg.header.frame_id = mp_.frame_id_;
 
-  global_map_pub_.publish(global_map_msg);
+//   global_map_pub_.publish(global_map_msg);
 
-  have_cylinders_ = true;
-  return;
-}
+//   have_cylinders_ = true;
+//   return;
+// }
 
-
-void GridMap::getMapUtil(std::shared_ptr<JPS::OccMapUtil>& sta_ptr_){
+// void GridMap::getMapUtil(std::shared_ptr<JPS::OccMapUtil>& sta_ptr_){
   
-  //std::cout << "[debug]start to init the map for jps !!!" << std::endl; 
-  if (!have_cylinders_ ) {
-    std::cout << "[GridMap::getMapUtil] No cylinders" << std::endl; 
-    return;
-  }
-  sta_ptr_ = sta_map_ptr_;
-  sta_ptr_->info();
-  std::cout << "[GridMap::getMapUtil] Success!" << std::endl; 
+//   //std::cout << "[debug]start to init the map for jps !!!" << std::endl; 
+//   if (!have_cylinders_ ) {
+//     std::cout << "[GridMap::getMapUtil] No cylinders" << std::endl; 
+//     return;
+//   }
+//   sta_ptr_ = sta_map_ptr_;
+//   sta_ptr_->info();
+//   std::cout << "[GridMap::getMapUtil] Success!" << std::endl; 
   
-}
+// }
 
 void GridMap::getPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud_ptr){
 
@@ -1058,7 +1054,8 @@ void GridMap::publishMapInflate(bool all_info)
     return;
 
   pcl::PointXYZ pt;
-  pcl::PointCloud<pcl::PointXYZ> cloud;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr inflated_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+
 
   Eigen::Vector3i min_cut = md_.local_bound_min_;
   Eigen::Vector3i max_cut = md_.local_bound_max_;
@@ -1088,16 +1085,18 @@ void GridMap::publishMapInflate(bool all_info)
         pt.x = pos(0);
         pt.y = pos(1);
         pt.z = pos(2);
-        cloud.push_back(pt);
+        inflated_cloud->points.push_back(pt);
       }
 
-  cloud.width = cloud.points.size();
-  cloud.height = 1;
-  cloud.is_dense = true;
-  cloud.header.frame_id = mp_.frame_id_;
+  inflated_cloud->width = inflated_cloud->points.size();
+  inflated_cloud->height = 1;
+  inflated_cloud->is_dense = true;
+  inflated_cloud->header.frame_id = mp_.frame_id_;
   sensor_msgs::PointCloud2 cloud_msg;
 
-  pcl::toROSMsg(cloud, cloud_msg);
+  latest_cloud_ = inflated_cloud;
+
+  pcl::toROSMsg(*inflated_cloud, cloud_msg);
   map_inf_pub_.publish(cloud_msg);
 
   // ROS_INFO("pub map");
